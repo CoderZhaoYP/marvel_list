@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫威复联宇宙电影</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="movies.css">
+    </link>
+</head>
+
+<body>
+    <div class="header">
+        <h1>漫威复联宇宙电影</h1>
+        <!-- <p>两个盒子并列显示，无需滚动页面。悬停翻转图片，使用移动和复制功能。</p> -->
+    </div>
+
+    <div class="main-container">
+        <!-- 并列的两个盒子 -->
+        <div class="side-by-side-container">
+            <!-- 第一个盒子：源图片盒 -->
+            <div class="box-container">
+                <div class="box-title">
+                    <i class="fas fa-film"></i>
+                    <span>未观看</span>
+                    <div class="count" id="sourceCount">8</div>
+                </div>
+                <div class="image-container" id="sourceContainer">
+                    <div class="image-box" id="sourceBox">
+                        <!-- 源图片卡片将通过JavaScript动态生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 第二个盒子：收藏图片盒 -->
+            <div class="box-container">
+                <div class="box-title">
+                    <i class="fas fa-ticket"></i>
+                    <span>已观看</span>
+                    <div class="count" id="collectionCount">0</div>
+                </div>
+                <div class="image-container" id="collectionContainer">
+                    <div class="image-box" id="collectionBox">
+                        <!-- 收藏为空时的提示 -->
+                        <div class="empty-message" id="collectionEmpty">
+                            <i class="far fa-folder-open"></i>
+                            <p>暂无已观看<br>从未观看列表移动电影到这里</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计区域 -->
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="totalImages">8</div>
+                <div class="stat-label">总电影数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="sourceImages">8</div>
+                <div class="stat-label">未观看数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="collectedImages">0</div>
+                <div class="stat-label">已观看数</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 复制成功提示 -->
+    <div class="copy-notification" id="copyNotification">
+        <i class="fas fa-check-circle"></i> 描述内容已复制到剪贴板！
+    </div>
+
+    <script>
+        // ============== 状态管理 ==============
+        const STORAGE_KEY = "imageManagerData";
+        let imageData = []; // 将从JSON加载
+        let state = { sourceImages: [], collectionImages: [] };
+
+        // ============== DOM元素引用 ==============
+        const sourceBox = document.getElementById('sourceBox');
+        const collectionBox = document.getElementById('collectionBox');
+        const collectionEmpty = document.getElementById('collectionEmpty');
+        const sourceCount = document.getElementById('sourceCount');
+        const collectionCount = document.getElementById('collectionCount');
+        const totalImages = document.getElementById('totalImages');
+        const sourceImagesEl = document.getElementById('sourceImages');
+        const collectedImagesEl = document.getElementById('collectedImages');
+
+        // ============== 数据加载与状态恢复 ==============
+        async function loadImageData() {
+            try {
+                const response = await fetch('data.json');
+                if (!response.ok) throw new Error(`HTTP错误! 状态: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error('加载图片数据失败:', error);
+                return [];
+            }
+        }
+
+        function loadSavedState(allImages) {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+
+            // 如果没有保存的数据，返回初始状态（所有图片在源盒子，保持原始顺序）
+            if (!savedData) {
+                return {
+                    sourceImages: [...allImages], // 直接展开，保持原数组顺序
+                    collectionImages: []
+                };
+            }
+
+            try {
+                const parsed = JSON.parse(savedData);
+                const savedSourceIds = new Set(parsed.sourceImageIds || []);
+                const savedCollectionIds = new Set(parsed.collectionImageIds || []);
+
+                // 核心逻辑：遍历原始顺序的 allImages，根据ID分配到对应数组
+                const sourceImages = [];
+                const collectionImages = [];
+
+                for (const img of allImages) {
+                    if (savedCollectionIds.has(img.id)) {
+                        // 如果ID在“收藏”集合中，放入收藏数组
+                        collectionImages.push(img);
+                    } else {
+                        // 否则，放入源数组（默认情况，也包含之前未操作过的图片）
+                        sourceImages.push(img);
+                    }
+                }
+
+                console.log('状态恢复完成，顺序已保持');
+                return { sourceImages, collectionImages };
+
+            } catch (e) {
+                console.error("解析保存的数据失败，使用默认顺序:", e);
+                return {
+                    sourceImages: [...allImages],
+                    collectionImages: []
+                };
+            }
+        }
+
+        function saveState() {
+            const dataToSave = {
+                sourceImageIds: state.sourceImages.map(img => img.id),
+                collectionImageIds: state.collectionImages.map(img => img.id)
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+        }
+
+        // ============== 渲染函数 ==============
+        function renderSourceImages() {
+            sourceBox.innerHTML = '';
+            if (state.sourceImages.length === 0) {
+                sourceBox.innerHTML = `<div class="empty-message"><i class="far fa-folder-open"></i><p>源图片盒为空</p></div>`;
+            } else {
+                state.sourceImages.forEach(item => sourceBox.appendChild(createFlipCard(item, 'source')));
+            }
+            sourceCount.textContent = state.sourceImages.length;
+        }
+        function renderCollectionImages() {
+            collectionBox.innerHTML = '';
+            if (state.collectionImages.length === 0) {
+                collectionEmpty.style.display = 'flex';
+                collectionBox.appendChild(collectionEmpty);
+            } else {
+                collectionEmpty.style.display = 'none';
+                state.collectionImages.forEach(item => collectionBox.appendChild(createFlipCard(item, 'collection')));
+            }
+            collectionCount.textContent = state.collectionImages.length;
+        }
+        function createFlipCard(item, boxType) {
+            const card = document.createElement('div');
+            card.className = 'flip-card';
+            card.setAttribute('data-id', item.id);
+            const actionButtons = boxType === 'source' ?
+                `<button class="action-btn move-btn" onclick="moveToCollection(${item.id})"><i class="fas fa-arrow-right"></i> 移动</button>` :
+                `<button class="action-btn move-btn" onclick="moveToSource(${item.id})"><i class="fas fa-arrow-left"></i> 移回</button>`;
+            card.innerHTML = `
+                <div class="flip-card-inner">
+                    <div class="flip-card-front">
+                        <img src="${item.image}" alt="${item.title}">
+                        <h3>${item.title}</h3>
+                    </div>
+                    <div class="flip-card-back">
+                        <h3>${item.title}</h3>
+                        <p>${item.description}</p>
+                        <div class="button-group">
+                            ${actionButtons}
+                            <button class="action-btn copy-btn" onclick="copyDescription(${item.id})"><i class="far fa-copy"></i> 复制</button>
+                        </div>
+                    </div>
+                </div>`;
+            return card;
+        }
+
+        // ============== 交互功能 ==============
+        window.moveToCollection = function (id) {
+            const index = state.sourceImages.findIndex(item => item.id === id);
+            if (index > -1) {
+                const [moved] = state.sourceImages.splice(index, 1);
+                state.collectionImages.push(moved);
+                updateAll();
+            }
+        };
+        window.moveToSource = function (id) {
+            const index = state.collectionImages.findIndex(item => item.id === id);
+            if (index > -1) {
+                const [moved] = state.collectionImages.splice(index, 1);
+                state.sourceImages.push(moved);
+                updateAll();
+            }
+        };
+        window.copyDescription = async function (id) {
+            const img = [...state.sourceImages, ...state.collectionImages].find(item => item.id === id);
+            if (img) {
+                try { await navigator.clipboard.writeText(img.description); showNotification(); }
+                catch (err) { console.error('复制失败:', err); }
+            }
+        };
+        function showNotification() {
+            const note = document.createElement('div');
+            note.className = 'copy-notification';
+            note.innerHTML = `<i class="fas fa-check-circle"></i> 描述内容已复制到剪贴板！`;
+            document.body.appendChild(note);
+            setTimeout(() => { note.classList.add('show'); }, 10);
+            setTimeout(() => { note.classList.remove('show'); setTimeout(() => note.remove(), 400); }, 2000);
+        }
+        function updateAll() {
+            renderSourceImages();
+            renderCollectionImages();
+            updateStats();
+            saveState();
+        }
+        function updateStats() {
+            totalImages.textContent = imageData.length;
+            sourceImagesEl.textContent = state.sourceImages.length;
+            collectedImagesEl.textContent = state.collectionImages.length;
+        }
+
+        // ============== 初始化 ==============
+        async function init() {
+            imageData = await loadImageData();
+            state = loadSavedState(imageData);
+            renderSourceImages();
+            renderCollectionImages();
+            updateStats();
+            window.addEventListener('beforeunload', saveState);
+        }
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+
+</html>
